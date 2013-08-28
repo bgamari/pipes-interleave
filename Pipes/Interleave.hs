@@ -75,6 +75,10 @@ merge compare append =
 
 -- | Split stream into groups of equal elements.
 -- Note that the groups will be reversed fromm input order.
+--
+-- >>> toList $ groupBy ((==) `on` fst) (each [(1,1), (1,4), (2,3), (3,10)])
+-- [[(1,1),(1,4)],[(2,3)],[(3,10)]]
+-- 
 groupBy :: (Monad m)
         => (a -> a -> Bool)    -- ^ equality test
         -> Producer a m r -> Producer [a] m r
