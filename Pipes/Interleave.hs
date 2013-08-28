@@ -21,7 +21,9 @@ import Pipes
 -- [1,1,3,5,5,7,9,9,13,17]
 -- 
 interleave :: (Monad m, Functor m)
-           => (a -> a -> Ordering) -> [Producer a m ()] -> Producer a m ()
+           => (a -> a -> Ordering)   -- ^ ordering on elements
+           -> [Producer a m ()]      -- ^ element producers
+           -> Producer a m ()
 interleave compare producers = do
     xs <- lift $ rights <$> mapM Pipes.next producers
     go xs
@@ -61,7 +63,9 @@ combine eq append producer = lift (next producer) >>= either return (uncurry go)
 -- [(1,12),(3,2),(5,12),(7,2),(9,12),(13,10),(17,10)]
 -- 
 merge :: (Monad m, Functor m)
-      => (a -> a -> Ordering) -> (a -> a -> m a)
-      -> [Producer a m ()] -> Producer a m ()
+      => (a -> a -> Ordering)    -- ^ ordering on elements
+      -> (a -> a -> m a)         -- ^ combine operation
+      -> [Producer a m ()]       -- ^ producers of elements
+      -> Producer a m ()
 merge compare append =
     combine (\a b->compare a b == EQ) append . interleave compare
