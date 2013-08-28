@@ -74,7 +74,9 @@ merge compare append =
     combine (\a b->compare a b == EQ) append . interleave compare
 
 -- | Split stream into groups of equal elements.
--- Note that the groups will be reversed fromm input order.
+-- Note that this is a non-local operation: if the 'Producer' generates
+-- a large run of equal elements, all of them will remain in memory until the
+-- run ends.
 --
 -- >>> toList $ groupBy ((==) `on` fst) (each [(1,1), (1,4), (2,3), (3,10)])
 -- [[(1,1),(1,4)],[(2,3)],[(3,10)]]
