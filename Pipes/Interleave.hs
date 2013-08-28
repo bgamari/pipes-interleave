@@ -3,7 +3,7 @@ module Pipes.Interleave ( interleave
                         , merge
                         ) where
                         
-import Control.Applicative
+import Control.Monad (liftM)
 import Data.List (sortBy)
 import Data.Function (on)
 import Data.Either (rights)
@@ -20,12 +20,12 @@ import Pipes
 -- >>> toList $ interleave compare [each [1,3..10], each [1,5..20]] 
 -- [1,1,3,5,5,7,9,9,13,17]
 -- 
-interleave :: (Monad m, Functor m)
+interleave :: (Monad m)
            => (a -> a -> Ordering)   -- ^ ordering on elements
            -> [Producer a m ()]      -- ^ element producers
            -> Producer a m ()
 interleave compare producers = do
-    xs <- lift $ rights <$> mapM Pipes.next producers
+    xs <- lift $ rights `liftM` mapM Pipes.next producers
     go xs
   where --go :: (Monad m, Functor m) => [(a, Producer a m ())] -> Producer a m ()
         go [] = return ()
@@ -62,7 +62,7 @@ combine eq append producer = lift (next producer) >>= either return (uncurry go)
 -- >>> toList $ merge (compare `on` fst) append producers
 -- [(1,12),(3,2),(5,12),(7,2),(9,12),(13,10),(17,10)]
 -- 
-merge :: (Monad m, Functor m)
+merge :: (Monad m)
       => (a -> a -> Ordering)    -- ^ ordering on elements
       -> (a -> a -> m a)         -- ^ combine operation
       -> [Producer a m ()]       -- ^ producers of elements
