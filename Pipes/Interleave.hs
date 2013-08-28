@@ -1,12 +1,15 @@
 module Pipes.Interleave ( interleave
                         , combine
                         , merge
+                        , groupBy
                         ) where
                         
 import Control.Monad (liftM)
 import Data.List (sortBy)
 import Data.Function (on)
 import Data.Either (rights)
+import qualified Data.Sequence as Seq
+import Data.Foldable (toList)
 import Pipes
 
 -- $setup
@@ -69,3 +72,20 @@ merge :: (Monad m)
       -> Producer a m ()
 merge compare append =
     combine (\a b->compare a b == EQ) append . interleave compare
+
+-- | Split stream into groups of equal elements.
+-- Note that the groups will be reversed fromm input order.
+groupBy :: (Monad m)
+        => (a -> a -> Bool)    -- ^ equality test
+        -> Producer a m r -> Producer [a] m r
+groupBy eq producer =
+    lift (next producer) >>= either return (\(x,producer)->go (Seq.singleton x) producer)
+  where -- go :: Monad m => Seq.Seq a -> Producer a m r -> Producer [a] m r
+        go xs producer' = do
+          n <- lift $ next producer'
+          case n of
+            Left r                 -> yield (toList xs) >> return r
+            Right (x, producer'')
+              | x `eq` x0     -> go (xs Seq.|> x) producer''
+              | otherwise     -> yield (toList xs) >> go (Seq.singleton x) producer''
+              where x0 Seq.:< _ = Seq.viewl xs
