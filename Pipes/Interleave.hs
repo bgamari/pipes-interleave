@@ -1,6 +1,8 @@
 module Pipes.Interleave ( interleave
                         , combine
+                        , combineM
                         , merge
+                        , mergeM
                         , groupBy
                         ) where
                         
