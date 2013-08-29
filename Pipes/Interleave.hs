@@ -36,6 +36,7 @@ interleave compare producers = do
                    yield a
                    x' <- lift $ next producer
                    go $ either (const xs') (:xs') x'
+{-# INLINABLE interleave #-}
 
 -- | Given a stream of increasing elements, combine those equal under the 
 -- given equality relation
@@ -57,6 +58,7 @@ combine eq append producer = lift (next producer) >>= either return (uncurry go)
               | a `eq` a'          -> do a'' <- lift $ append a a'
                                          go a'' producer''
               | otherwise          -> yield a >> go a' producer''
+{-# INLINABLE combine #-}
    
 -- | Equivalent to 'combine' composed with 'interleave'
 --
@@ -72,6 +74,7 @@ merge :: (Monad m)
       -> Producer a m ()
 merge compare append =
     combine (\a b->compare a b == EQ) append . interleave compare
+{-# INLINABLE merge #-}
 
 -- | Split stream into groups of equal elements.
 -- Note that this is a non-local operation: if the 'Producer' generates
@@ -95,3 +98,4 @@ groupBy eq producer =
               | x `eq` x0     -> go (xs Seq.|> x) producer''
               | otherwise     -> yield (toList xs) >> go (Seq.singleton x) producer''
               where x0 Seq.:< _ = Seq.viewl xs
+{-# INLINABLE groupBy #-}
