@@ -47,9 +47,17 @@ interleave compare producers = do
 --
 combine :: (Monad m)
         => (a -> a -> Bool)    -- ^ equality test
-        -> (a -> a -> m a)     -- ^ combine operation
+        -> (a -> a -> a)       -- ^ combine operation
         -> Producer a m r -> Producer a m r
-combine eq append producer = lift (next producer) >>= either return (uncurry go)
+combine eq append = combineM eq (\a b->return $ append a b)
+{-# INLINEABLE combine #-}
+        
+-- | 'combine' with monadic side-effects in combine operation.
+combineM :: (Monad m)
+         => (a -> a -> Bool)    -- ^ equality test
+         -> (a -> a -> m a)     -- ^ combine operation
+         -> Producer a m r -> Producer a m r
+combineM eq append producer = lift (next producer) >>= either return (uncurry go)
   where go a producer' = do
           n <- lift $ next producer'
           case n of
@@ -58,7 +66,7 @@ combine eq append producer = lift (next producer) >>= either return (uncurry go)
               | a `eq` a'          -> do a'' <- lift $ append a a'
                                          go a'' producer''
               | otherwise          -> yield a >> go a' producer''
-{-# INLINABLE combine #-}
+{-# INLINABLE combineM #-}
    
 -- | Equivalent to 'combine' composed with 'interleave'
 --
@@ -69,12 +77,21 @@ combine eq append producer = lift (next producer) >>= either return (uncurry go)
 -- 
 merge :: (Monad m)
       => (a -> a -> Ordering)    -- ^ ordering on elements
-      -> (a -> a -> m a)         -- ^ combine operation
+      -> (a -> a -> a)           -- ^ combine operation
       -> [Producer a m ()]       -- ^ producers of elements
       -> Producer a m ()
-merge compare append =
-    combine (\a b->compare a b == EQ) append . interleave compare
+merge compare append = mergeM compare (\a b->return $ append a b)
 {-# INLINABLE merge #-}
+
+-- | Merge with monadic side-effects in combine operation.
+mergeM :: (Monad m)
+       => (a -> a -> Ordering)    -- ^ ordering on elements
+       -> (a -> a -> m a)         -- ^ combine operation
+       -> [Producer a m ()]       -- ^ producers of elements
+       -> Producer a m ()
+mergeM compare append =
+    combineM (\a b->compare a b == EQ) append . interleave compare
+{-# INLINABLE mergeM #-}
 
 -- | Split stream into groups of equal elements.
 -- Note that this is a non-local operation: if the 'Producer' generates
