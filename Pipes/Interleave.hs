@@ -5,7 +5,7 @@ module Pipes.Interleave ( interleave
                         , mergeM
                         , groupBy
                         ) where
-                        
+
 import Control.Monad (liftM)
 import Data.List (sortBy)
 import Data.Function (on)
@@ -21,10 +21,10 @@ import Pipes
 
 -- | Interleave elements from a set of 'Producers' such that the interleaved
 -- stream is increasing with respect to the given ordering.
--- 
--- >>> toList $ interleave compare [each [1,3..10], each [1,5..20]] 
+--
+-- >>> toList $ interleave compare [each [1,3..10], each [1,5..20]]
 -- [1,1,3,5,5,7,9,9,13,17]
--- 
+--
 interleave :: (Monad m)
            => (a -> a -> Ordering)   -- ^ ordering on elements
            -> [Producer a m ()]      -- ^ element producers
@@ -40,7 +40,7 @@ interleave compare producers = do
                    go $ either (const xs') (:xs') x'
 {-# INLINABLE interleave #-}
 
--- | Given a stream of increasing elements, combine those equal under the 
+-- | Given a stream of increasing elements, combine those equal under the
 -- given equality relation
 --
 -- >>> let append (k,v) (_,v') = return (k, v+v')
@@ -53,7 +53,7 @@ combine :: (Monad m)
         -> Producer a m r -> Producer a m r
 combine eq append = combineM eq (\a b->return $ append a b)
 {-# INLINEABLE combine #-}
-        
+
 -- | 'combine' with monadic side-effects in combine operation.
 combineM :: (Monad m)
          => (a -> a -> Bool)    -- ^ equality test
@@ -69,14 +69,14 @@ combineM eq append producer = lift (next producer) >>= either return (uncurry go
                                          go a'' producer''
               | otherwise          -> yield a >> go a' producer''
 {-# INLINABLE combineM #-}
-   
+
 -- | Equivalent to 'combine' composed with 'interleave'
 --
 -- >>> let append (k,v) (_,v') = return (k, v+v')
 -- >>> let producers = [ each [(i,2) | i <- [1,3..10]], each [(i,10) | i <- [1,5..20]] ] :: [Producer (Int,Int) Identity ()]
 -- >>> toList $ merge (compare `on` fst) append producers
 -- [(1,12),(3,2),(5,12),(7,2),(9,12),(13,10),(17,10)]
--- 
+--
 merge :: (Monad m)
       => (a -> a -> Ordering)    -- ^ ordering on elements
       -> (a -> a -> a)           -- ^ combine operation
@@ -102,7 +102,7 @@ mergeM compare append =
 --
 -- >>> toList $ groupBy ((==) `on` fst) (each [(1,1), (1,4), (2,3), (3,10)])
 -- [[(1,1),(1,4)],[(2,3)],[(3,10)]]
--- 
+--
 groupBy :: (Monad m)
         => (a -> a -> Bool)    -- ^ equality test
         -> Producer a m r -> Producer [a] m r
