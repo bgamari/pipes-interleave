@@ -1,5 +1,5 @@
 name:                pipes-interleave
-version:             0.2.2
+version:             1.0.0
 synopsis:            Interleave and merge streams of elements
 description:         Interleave and merge streams of elements
 homepage:            http://github.com/bgamari/pipes-interleave
