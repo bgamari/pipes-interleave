@@ -1,15 +1,19 @@
+{-# LANGUAGE ScopedTypeVariables #-}
+
 module Pipes.Interleave ( interleave
                         , combine
                         , combineM
                         , merge
                         , mergeM
                         , groupBy
+                        , H.Entry(..)
                         ) where
 
 import Control.Monad (liftM)
 import Data.List (sortBy)
 import Data.Function (on)
 import Data.Either (rights)
+import qualified Data.Heap as H
 import qualified Data.Sequence as Seq
 import Data.Foldable (toList)
 import Pipes
@@ -22,77 +26,72 @@ import Pipes
 -- | Interleave elements from a set of 'Producers' such that the interleaved
 -- stream is increasing with respect to the given ordering.
 --
--- >>> toList $ interleave compare [each [1,3..10], each [1,5..20]]
+-- >>> toList $ interleave [each [1,3..10], each [1,5..20]]
 -- [1,1,3,5,5,7,9,9,13,17]
 --
-interleave :: (Monad m)
-           => (a -> a -> Ordering)   -- ^ ordering on elements
-           -> [Producer a m ()]      -- ^ element producers
+interleave :: forall a m. (Monad m, Ord a)
+           => [Producer a m ()]      -- ^ element producers
            -> Producer a m ()
-interleave compare producers = do
+interleave producers = do
     xs <- lift $ rights `liftM` mapM Pipes.next producers
-    go xs
-  where --go :: (Monad m, Functor m) => [(a, Producer a m ())] -> Producer a m ()
-        go [] = return ()
-        go xs = do let (a,producer):xs' = sortBy (compare `on` fst) xs
-                   yield a
-                   x' <- lift $ next producer
-                   go $ either (const xs') (:xs') x'
+    go (H.fromList $ map (uncurry H.Entry) xs)
+  where go :: (Monad m, Functor m) => H.Heap (H.Entry a (Producer a m ())) -> Producer a m ()
+        go xs
+          | Just (H.Entry a producer, xs') <- H.viewMin xs = do
+              yield a
+              x' <- lift $ next producer
+              go $ either (const xs') (\(x,prod) -> H.insert (H.Entry x prod) xs') x'
+          | otherwise = return ()
 {-# INLINABLE interleave #-}
 
--- | Given a stream of increasing elements, combine those equal under the
--- given equality relation
+-- | Given a stream of increasing elements, combine those that are equal.
 --
--- >>> let append (k,v) (_,v') = return (k, v+v')
--- >>> toList $ combine ((==) `on` fst) append (each [(1,1), (1,4), (2,3), (3,10)])
--- [(1,5),(2,3),(3,10)]
+-- >>> let append (Entry k v) (Entry _ v') = Entry k (v+v')
+-- >>> toList $ combine append (each $ map (uncurry Entry) [(1,1), (1,4), (2,3), (3,10)])
+-- [Entry {priority = 1, payload = 5},Entry {priority = 2, payload = 3},Entry {priority = 3, payload = 10}]
 --
-combine :: (Monad m)
-        => (a -> a -> Bool)    -- ^ equality test
-        -> (a -> a -> a)       -- ^ combine operation
+combine :: (Monad m, Eq a)
+        => (a -> a -> a)       -- ^ combine operation
         -> Producer a m r -> Producer a m r
-combine eq append = combineM eq (\a b->return $ append a b)
+combine append = combineM (\a b->return $ append a b)
 {-# INLINEABLE combine #-}
 
--- | 'combine' with monadic side-effects in combine operation.
-combineM :: (Monad m)
-         => (a -> a -> Bool)    -- ^ equality test
-         -> (a -> a -> m a)     -- ^ combine operation
+-- | 'combine' with monadic side-effects in the combine operation.
+combineM :: (Monad m, Eq a)
+         => (a -> a -> m a)     -- ^ combine operation
          -> Producer a m r -> Producer a m r
-combineM eq append producer = lift (next producer) >>= either return (uncurry go)
+combineM append producer = lift (next producer) >>= either return (uncurry go)
   where go a producer' = do
           n <- lift $ next producer'
           case n of
             Left r                 -> yield a >> return r
             Right (a', producer'')
-              | a `eq` a'          -> do a'' <- lift $ append a a'
+              | a == a'            -> do a'' <- lift $ append a a'
                                          go a'' producer''
               | otherwise          -> yield a >> go a' producer''
 {-# INLINABLE combineM #-}
 
 -- | Equivalent to 'combine' composed with 'interleave'
 --
--- >>> let append (k,v) (_,v') = return (k, v+v')
--- >>> let producers = [ each [(i,2) | i <- [1,3..10]], each [(i,10) | i <- [1,5..20]] ] :: [Producer (Int,Int) Identity ()]
--- >>> toList $ merge (compare `on` fst) append producers
+-- >>> let append (Entry k v) (Entry _ v') = Entry k (v+v')
+-- >>> let producers = [ each [Entry i 2 | i <- [1,3..10]], each [Entry i 10 | i <- [1,5..20]] ] :: [Producer (Entry Int Int) Identity ()]
+-- >>> toList $ merge append producers
 -- [(1,12),(3,2),(5,12),(7,2),(9,12),(13,10),(17,10)]
 --
-merge :: (Monad m)
-      => (a -> a -> Ordering)    -- ^ ordering on elements
-      -> (a -> a -> a)           -- ^ combine operation
+merge :: (Monad m, Ord a)
+      => (a -> a -> a)           -- ^ combine operation
       -> [Producer a m ()]       -- ^ producers of elements
       -> Producer a m ()
-merge compare append = mergeM compare (\a b->return $ append a b)
+merge append = mergeM (\a b->return $ append a b)
 {-# INLINABLE merge #-}
 
--- | Merge with monadic side-effects in combine operation.
-mergeM :: (Monad m)
-       => (a -> a -> Ordering)    -- ^ ordering on elements
-       -> (a -> a -> m a)         -- ^ combine operation
+-- | Merge with monadic side-effects in the combine operation.
+mergeM :: (Monad m, Ord a)
+       => (a -> a -> m a)         -- ^ combine operation
        -> [Producer a m ()]       -- ^ producers of elements
        -> Producer a m ()
-mergeM compare append =
-    combineM (\a b->compare a b == EQ) append . interleave compare
+mergeM append =
+    combineM append . interleave
 {-# INLINABLE mergeM #-}
 
 -- | Split stream into groups of equal elements.
@@ -100,21 +99,21 @@ mergeM compare append =
 -- a large run of equal elements, all of them will remain in memory until the
 -- run ends.
 --
--- >>> toList $ groupBy ((==) `on` fst) (each [(1,1), (1,4), (2,3), (3,10)])
--- [[(1,1),(1,4)],[(2,3)],[(3,10)]]
+-- >>> toList $ groupBy (each [Entry 1 1, Entry 1 4, Entry 2 3, Entry 3 10])
+-- [[Entry {priority = 1, payload = 1},Entry {priority = 1, payload = 4}],[Entry {priority = 2, payload = 3}],[Entry {priority = 3, payload = 10}]]
 --
-groupBy :: (Monad m)
-        => (a -> a -> Bool)    -- ^ equality test
-        -> Producer a m r -> Producer [a] m r
-groupBy eq producer =
+groupBy :: forall a r m. (Monad m, Ord a)
+        => Producer a m r -> Producer [a] m r
+groupBy producer =
     lift (next producer) >>= either return (\(x,producer)->go (Seq.singleton x) producer)
-  where -- go :: Monad m => Seq.Seq a -> Producer a m r -> Producer [a] m r
-        go xs producer' = do
-          n <- lift $ next producer'
-          case n of
-            Left r                 -> yield (toList xs) >> return r
-            Right (x, producer'')
-              | x `eq` x0     -> go (xs Seq.|> x) producer''
-              | otherwise     -> yield (toList xs) >> go (Seq.singleton x) producer''
-              where x0 Seq.:< _ = Seq.viewl xs
+  where
+    go :: Seq.Seq a -> Producer a m r -> Producer [a] m r
+    go xs producer' = do
+      n <- lift $ next producer'
+      case n of
+        Left r                 -> yield (toList xs) >> return r
+        Right (x, producer'')
+          | x == x0            -> go (xs Seq.|> x) producer''
+          | otherwise          -> yield (toList xs) >> go (Seq.singleton x) producer''
+          where x0 Seq.:< _ = Seq.viewl xs
 {-# INLINABLE groupBy #-}
