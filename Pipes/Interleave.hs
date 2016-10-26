@@ -6,12 +6,9 @@ module Pipes.Interleave ( interleave
                         , merge
                         , mergeM
                         , groupBy
-                        , H.Entry(..)
                         ) where
 
 import Control.Monad (liftM)
-import Data.List (sortBy)
-import Data.Function (on)
 import Data.Either (rights)
 import qualified Data.Heap as H
 import qualified Data.Sequence as Seq
